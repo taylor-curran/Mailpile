@@ -218,7 +218,7 @@ class RestoreBackup(Command):
     ORDER = ('Internals', 6)
     RAISES = (UrlRedirectException,)
     CONFIG_REQUIRED = False
-    HTTP_AUTH_REQUIRED = 'maybe'
+    HTTP_AUTH_REQUIRED = 'Maybe'
     HTTP_CALLABLE = ('GET', 'POST')
     HTTP_QUERY_VARS = {
         'lang': 'Language to use in UI'}
@@ -296,6 +296,10 @@ class RestoreBackup(Command):
             except (IOError, OSError):
                 return self._error('Failed to read: %s' % self.args[0])
         elif self.data.get('_method') == 'POST':
+            if not (session.ui.html_variables and
+                    session.ui.valid_csrf_token(
+                        self.data.get('csrf', [''])[0])):
+                raise AccessError('Invalid CSRF token')
             if 'restore' in self.data:
                 backup_data = AVAILABLE_BACKUPS[self.data['restore'][0]]
                 password = self.data.get('password', [''])[0]
