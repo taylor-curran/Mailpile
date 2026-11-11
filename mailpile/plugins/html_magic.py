@@ -151,9 +151,9 @@ class HttpProxyGetRequest(Command):
 
         conn_reject = []  # FIXME: reject ConnBroker.OUTGOING_TRACKABLE ?
         if url[:6].lower() == 'https:':
-            conn_need = [ConnBroker.OUTGOING_HTTP]
-        elif url[:5].lower() == 'http:':
             conn_need = [ConnBroker.OUTGOING_HTTPS]
+        elif url[:5].lower() == 'http:':
+            conn_need = [ConnBroker.OUTGOING_HTTP]
         else:
             raise AccessError('Invalid URL scheme')
 
