@@ -104,7 +104,9 @@ class CardDAV(DAVClient):
 
     def list_vcards(self):
         stat, msg, hdr, resbody = self.request(self.url, "PROPFIND", {}, {})
-        tr = etree.fromstring(resbody)
+        parser = etree.XMLParser(resolve_entities=False, no_network=True,
+                                 huge_tree=False)
+        tr = etree.fromstring(resbody, parser)
         urls = [x.text for x in tr.xpath("/d:multistatus/d:response/d:href",
                                          namespaces={"d": "DAV:"})
                 if x.text not in ("", None) and x.text[-3:] == "vcf"]
