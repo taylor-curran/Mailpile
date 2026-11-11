@@ -560,7 +560,10 @@ class SetupGetEmailSettings(TestableWebbable):
                 xml_data = self._urlget(url)
 
             if xml_data:
-                data = objectify.fromstring(xml_data)
+                parser = objectify.makeparser(resolve_entities=False,
+                                              no_network=True,
+                                              huge_tree=False)
+                data = objectify.fromstring(xml_data, parser)
 # FIXME: Massage these so they match the format of the routes and
 #        sources more closely. Also look out and report the visiturl to
 #        handle GMail. OAuth2 is coming up as an auth mech, we will need to
