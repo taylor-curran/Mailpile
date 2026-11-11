@@ -304,6 +304,14 @@ class UrlMap:
         Traceback (most recent call last):
             ...
         UsageError: Not available for GET: message/update
+        >>> urlmap._map_api_command('GET', ['message', 'delete', '=0', ''],
+        ...                         {}, {})
+        Traceback (most recent call last):
+            ...
+        UsageError: Not available for GET: message/delete/=0
+        >>> urlmap._map_api_command('POST', ['message', 'delete', '=0', ''],
+        ...                         {}, {})
+        [<mailpile.plugins.core.Output...>, <...DeleteMessages...>]
         """
         output = self._choose_output(path_parts, fmt=fmt)
         for bp in reversed(range(1, len(path_parts) + 1)):

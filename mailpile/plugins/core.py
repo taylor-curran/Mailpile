@@ -372,6 +372,7 @@ class DeleteMessages(Command):
     SYNOPSIS = (None, 'delete', 'message/delete', '[--keep] <messages>')
     ORDER = ('Searching', 99)
     IS_USER_ACTIVITY = True
+    HTTP_CALLABLE = ('POST', )
 
     def command(self, slowly=False):
         idx = self._idx()
