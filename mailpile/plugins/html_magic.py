@@ -138,6 +138,19 @@ class HttpProxyGetRequest(Command):
         'csrf': 'CSRF token'
     }
 
+    SAFE_IMAGE_TYPES = (
+        'image/apng', 'image/avif', 'image/bmp', 'image/gif', 'image/jpeg',
+        'image/pjpeg', 'image/png', 'image/tiff', 'image/webp',
+        'image/vnd.microsoft.icon', 'image/x-icon')
+
+    @classmethod
+    def _safe_content_type(cls, contenttype):
+        # Never relay remote types the browser could execute on our origin
+        mimetype = (contenttype or '').split(';', 1)[0].strip().lower()
+        if mimetype in cls.SAFE_IMAGE_TYPES:
+            return mimetype
+        return 'application/octet-stream'
+
     def command(self):
         session = self.session
         html_variables = session.ui.html_variables
@@ -165,14 +178,16 @@ class HttpProxyGetRequest(Command):
             response = e
 
         data = response.read()
-        headers = response.headers
-        contenttype = headers.get('content-type', 'application/octet-stream')
+        contenttype = self._safe_content_type(
+            response.headers.get('content-type', ''))
 
         request = html_variables['http_request']
         request.send_http_response(response.code, response.msg)
-        request.send_standard_headers(mimetype=contenttype,
-                                      header_list=[('Content-Length',
-                                                    len(data))])
+        request.send_standard_headers(mimetype=contenttype, header_list=[
+            ('Content-Length', len(data)),
+            ('Content-Disposition', 'attachment'),
+            ('X-Content-Type-Options', 'nosniff'),
+            ('Content-Security-Policy', "sandbox; default-src 'none'")])
         request.wfile.write(data)
 
         raise SuppressHtmlOutput()
