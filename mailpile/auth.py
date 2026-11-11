@@ -142,10 +142,16 @@ class Authenticate(Command):
         path = self.data.get('_path', [None])[0]
 
         # These are here to prevent people from abusing this to redirect to
-        # arbitrary URLs on the Internet.
+        # arbitrary URLs on the Internet. Browsers treat backslashes like
+        # slashes and strip control characters, so reject those too.
         if path:
             url = urlparse(path)
-            safe_assert(not url.scheme and not url.netloc)
+            if (url.scheme or url.netloc or
+                    not path.startswith('/') or
+                    path[1:2] == '/' or
+                    '\\' in path or
+                    any(ord(c) < 32 or ord(c) == 127 for c in path)):
+                path = None
 
         if (path and
                not path[1:].startswith(DeAuthenticate.SYNOPSIS[2] or '!') and
