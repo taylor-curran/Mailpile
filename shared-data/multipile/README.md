@@ -18,10 +18,22 @@ log-in page.
 
 Apache is configured to proxy incoming traffic to/from running Mailpile
 processes, mapping usernames to localhost port numbers. If a user's Mailpile is
-not running, the user is presented with a log-in page that requests a username,
-which is in turn passed to `mailpile-admin.py` (running as a CGI) which
-launches a much simpler (=secure?) script named `mailpile-launcher.py` via
-`sudo`.
+not running, the user is presented with a log-in page that submits to
+`mailpile-admin.py` (running as a CGI) which launches a much simpler
+(=secure?) script named `mailpile-launcher.py` via `sudo`.
+
+The CGI requires Apache to authenticate the user first, and will only launch
+Mailpile for the authenticated user (`REMOTE_USER`). Launches are also rate
+limited. By default, the generated Apache config uses HTTP Basic auth backed by
+`/etc/mailpile/multipile.htpasswd`, so you need to add an entry for each user
+(names must match their Unix usernames):
+
+    $ sudo htpasswd -c /etc/mailpile/multipile.htpasswd frank  # first user
+    $ sudo htpasswd /etc/mailpile/multipile.htpasswd bob
+
+Until that file exists, nobody can launch Mailpile via the web. You can swap the
+`<Files "admin.cgi">` block in the Apache config for PAM, LDAP or any other
+Apache auth provider, as long as it sets `REMOTE_USER` to the Unix username.
 
 The launcher will attempt to launch the user's Mailpile in a background screen
 session owned by that user. The launcher will only launch Mailpiles for users
@@ -70,6 +82,7 @@ A. The Debian package installs Multipile in `/usr/share/mailpile/multipile`
 
 Q. Why doesn't my Mailpile start up when I enter my username?  
 A. Your admin probably needs to run: `mailpile-admin.py --start --user YOU`
+and make sure you have an entry in the htpasswd file (see above).
 
 Q. Why not nginx or some other better web-server?  
 A. Nobody has contributed the necessary recipies yet! Please do!

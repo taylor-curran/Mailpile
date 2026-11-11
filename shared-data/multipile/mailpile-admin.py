@@ -12,6 +12,7 @@ import cgi
 import ConfigParser
 import copy
 import distutils.spawn
+import fcntl
 import getpass
 import json
 import os
@@ -31,6 +32,11 @@ MAILPILE_PIDS_PATH = "/var/lib/mailpile/pids"
 APACHE_DEFAULT_WEBROOT = "/mailpile"
 APACHE_REWRITEMAP_PATH = "/var/lib/mailpile/apache/usermap.txt"
 APACHE_SUDOERS_PATH = "/etc/sudoers.d/mailpile-apache"
+APACHE_HTPASSWD_PATH = "/etc/mailpile/multipile.htpasswd"
+CGI_RATELIMIT_FILENAME = "launch-ratelimit.json"
+CGI_RATELIMIT_WINDOW = 60
+CGI_RATELIMIT_PER_USER = 1
+CGI_RATELIMIT_GLOBAL = 10
 
 
 MAILPILE_STOP_SCRIPT = [
@@ -64,7 +70,8 @@ MAILPILE_DELETE_SCRIPT = [
 
 CONFIGURE_APACHE_SCRIPT = [
     '"%(packager)s" install screen sudo',
-    '"%(a2enmod)s" headers rewrite proxy proxy_http cgi',
+    '"%(a2enmod)s" headers rewrite proxy proxy_http cgi'
+        ' auth_basic authn_file authz_user',
     'mkdir -p /var/lib/mailpile/apache/ /var/lib/mailpile/pids/',
     'touch /var/lib/mailpile/apache/usermap.txt',
     'touch %(multipile-www)s/admin.cgi',
@@ -97,6 +104,17 @@ RewriteMap mailpile_u2hp "txt:%(rewritemap)s"
     AddHandler cgi-script .cgi
     LogLevel alert rewrite:trace8
     Require all granted
+
+    # Launching Mailpile requires a log-in; admin.cgi trusts REMOTE_USER.
+    # Manage accounts with: htpasswd "%(htpasswd)s" USERNAME
+    # (or replace this with mod_authnz_pam, LDAP, etc.)
+    <Files "admin.cgi">
+        AuthType Basic
+        AuthName "Mailpile"
+        AuthBasicProvider file
+        AuthUserFile "%(htpasswd)s"
+        Require valid-user
+    </Files>
 
     # Show a helpful error if we're incorrectly configured
     RewriteCond ${mailpile_u2hp:apache_map_test} !=ok
@@ -219,6 +237,8 @@ def app_arguments():
         help='Location of Mailpile/Multipile files')
     ap.add_argument('--apache-sudoers', default=APACHE_SUDOERS_PATH,
         help='Sudoers config: path to Mailpile/Apache sudoers file')
+    ap.add_argument('--htpasswd', default=APACHE_HTPASSWD_PATH,
+        help='Apache config: path to htpasswd file guarding admin.cgi')
     ap.add_argument('--rewritemap', default=APACHE_REWRITEMAP_PATH,
         help='Apache config: path to rewrite-map file')
     ap.add_argument('--blank', action='store_true',
@@ -382,6 +402,7 @@ def get_os_settings(args):
         'apache-confs': args.apache_confs or '/etc/apache2/conf-available',
         'webroot': args.webroot,
         'rewritemap': args.rewritemap,
+        'htpasswd': args.htpasswd,
         'apache-sudoers': args.apache_sudoers,
         'mailpile': args.mailpile or find_mailpile_executable(),
         'mailpile-launcher': os.path.join(mp_share,
@@ -681,20 +702,60 @@ def main():
         delete_mailpile(app_args, parsed_args)
 
 
+def _cgi_authenticated_user():
+    # Apache sets REMOTE_USER only after it has verified the credentials
+    # (see the <Files "admin.cgi"> block in APACHE_CONFIG_TEMPLATE).
+    username = (os.getenv('REMOTE_USER') or '').split('@')[0]
+    if not re.match(r'^[a-zA-Z0-9_][a-zA-Z0-9_-]*$', username):
+        raise ValueError('Not authenticated')
+    if username == 'root':
+        raise ValueError('Refusing to launch Mailpile as root')
+    return username
+
+
+def _cgi_check_rate_limit(os_settings, username, now=None):
+    now = now if (now is not None) else time.time()
+    statefile = os.path.join(os.path.dirname(os_settings['rewritemap']),
+                             CGI_RATELIMIT_FILENAME)
+    fd = os.open(statefile, os.O_RDWR | os.O_CREAT, 0o600)
+    with os.fdopen(fd, 'r+') as fp:
+        fcntl.flock(fp, fcntl.LOCK_EX)
+        try:
+            launches = json.loads(fp.read() or '[]')
+        except ValueError:
+            launches = []
+        launches = [(t, u) for t, u in launches
+                    if now - CGI_RATELIMIT_WINDOW < t <= now]
+        if (len(launches) >= CGI_RATELIMIT_GLOBAL or
+                len([u for t, u in launches if u == username])
+                    >= CGI_RATELIMIT_PER_USER):
+            raise ValueError('Rate limited')
+        launches.append((now, username))
+        fp.seek(0)
+        fp.truncate()
+        fp.write(json.dumps(launches))
+
+
 def handle_cgi_post():
     app_args = app_arguments()
     parse_config(app_args)
     try:
-        request = cgi.FieldStorage()
-        username = request.getfirst('username').split('@')[0]
+        username = _cgi_authenticated_user()
 
-        # Sanity checks; these will raise on invalid/missing username
-        assert(username)
+        # If the form names a user, it must be the one who logged in
+        request = cgi.FieldStorage()
+        requested = (request.getfirst('username') or '').split('@')[0]
+        if requested and requested != username:
+            raise ValueError('Username mismatch')
+
+        # Sanity check; this will raise on unknown usernames
         pwd.getpwnam(username)
 
         # Generate argument and settings objects for use below
         parsed_args = app_args.parse_args(['--launch', '--user', username])
         settings = get_os_settings(parsed_args)
+
+        _cgi_check_rate_limit(settings, username)
 
         # Send headers now, so output doesn't confuse Apache
         print('Location: %s/%s/' % (settings['webroot'], username))
