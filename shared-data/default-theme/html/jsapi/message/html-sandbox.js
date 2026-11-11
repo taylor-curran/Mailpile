@@ -49,8 +49,11 @@ Mailpile.Message.AddDOMPurifyHooks = function(with_image_proxy,
     }
   }
 
-  // Specify attributes to proxy
-  var attributes = ['background', 'href', 'src'];  // not: 'action', 'poster'
+  // Specify attributes to proxy. Navigation hrefs (a, area, SVG a, ...)
+  // must never be proxied; only elements that load resources via href.
+  var attributes = ['background', 'src'];  // not: 'action', 'poster'
+  var href_attributes = ['href', 'xlink:href'];
+  var href_resource_nodes = ['image', 'feimage'];
 
   // specify the regex to detect external content
   var url_regex = /(url\("?)(?!data:)/gim;
@@ -149,13 +152,15 @@ Mailpile.Message.AddDOMPurifyHooks = function(with_image_proxy,
     }
 
     // Check all src attributes and proxy them
-    if (node.nodeName != 'A') {
-      for(var i = 0; i <= attributes.length-1; i++) {
-        if (node.hasAttribute(attributes[i])) {
-          node.setAttribute(attributes[i], proxyAttribute(
-            node.getAttribute(attributes[i]))
-          );
-        }
+    var proxy_attributes = attributes;
+    if (href_resource_nodes.indexOf(node.nodeName.toLowerCase()) >= 0) {
+      proxy_attributes = attributes.concat(href_attributes);
+    }
+    for(var i = 0; i <= proxy_attributes.length-1; i++) {
+      if (node.hasAttribute(proxy_attributes[i])) {
+        node.setAttribute(proxy_attributes[i], proxyAttribute(
+          node.getAttribute(proxy_attributes[i]))
+        );
       }
     }
 
