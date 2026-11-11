@@ -389,25 +389,29 @@ class UrlMap:
 
         if authenticate:
             def auth(commands, user_session):
+                csrf_ok = True
+                if method == 'POST':
+                    if isinstance(post_data, cgi.FieldStorage):
+                        try:
+                            csrf = post_data['csrf'].value
+                        except KeyError:
+                            csrf = ''
+                    else:
+                        csrf = post_data.get('csrf', [''])[0]
+                    csrf_ok = bool(sid) and security.valid_csrf_token(
+                        request.server.secret, sid, csrf)
                 if user_session:
                     if user_session.is_expired():
                         mailpile.auth.SESSION_CACHE.delete_expired()
                         user_session = None
                     else:
                         user_session.update_ts()
-                    if user_session and method == 'POST':
-                        if isinstance(post_data, cgi.FieldStorage):
-                            try:
-                                csrf = post_data['csrf'].value
-                            except KeyError:
-                                csrf = ''
-                        else:
-                            csrf = post_data.get('csrf', [''])[0]
-                        if not security.valid_csrf_token(
-                                request.server.secret, sid, csrf):
-                            user_session = None
+                    if user_session and not csrf_ok:
+                        user_session = None
                 if not user_session or not user_session.auth:
                     for c in commands:
+                        if c.HTTP_AUTH_REQUIRED == 'Maybe' and not csrf_ok:
+                            raise AccessError('Invalid CSRF token')
                         if (c.HTTP_AUTH_REQUIRED is True or
                                (c.HTTP_AUTH_REQUIRED == 'Maybe' and
                                 self.session.config.prefs.gpg_recipient)):

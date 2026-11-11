@@ -26,6 +26,7 @@
   </noscript></p>
   <form method="POST" action="{{ U('/setup/welcome/') }}"
         class="animated bounceIn">
+    {{ csrf_field|safe }}
     <p>
     <select id='langs' name="language">
       <option value="">{{_("Select Language")}}...</option>
